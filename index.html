@@ -95,9 +95,9 @@
             <!-- Header bar for viewer -->
             <div class="flex-shrink-0 bg-gray-50 dark:bg-gray-700 p-4 flex justify-between items-center border-b dark:border-gray-600">
                 <h1 id="view-title" class="text-lg sm:text-xl font-bold text-gray-800 dark:text-gray-100 truncate"></h1>
-                <a href="/" title="Back to Project Manager" class="flex-shrink-0 py-2 px-3 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <!-- <a href="/" title="Back to Project Manager" class="flex-shrink-0 py-2 px-3 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                     Admin
-                </a>
+                </a> -->
             </div>
             <!-- PDF Viewer Iframe -->
             <iframe id="pdf-viewer" class="w-full h-full flex-grow border-0"></iframe>
@@ -237,7 +237,7 @@
                         // Extract the file ID
                         const fileId = url.split('/d/')[1].split('/')[0];
                         // Return the /preview (embed) URL
-                        return `https://drive.google.com/file/d/${fileId}/preview`;
+                        return `https://drive.google.com/file/d/${fileId}/preview?rm=minimal`;
                     } catch (e) {
                         console.error("Could not parse Google Drive URL", e);
                         return url; // Fallback to original URL
