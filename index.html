@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Doc Viewer</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load QR Code Generation Library -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Simple transition for loading */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Hide scrollbar for a cleaner look */
+        body::-webkit-scrollbar {
+            display: none;
+        }
+        body {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Ensure QR code links are not clickable */
+        .qr-container div {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans h-full flex items-center justify-center p-4">
+
+    <!-- Main Application Container -->
+    <div id="app-container" class="w-full h-full max-w-4xl mx-auto py-8">
+
+        <!-- Loading State -->
+        <div id="loading" class="flex flex-col items-center justify-center h-full">
+            <svg class="animate-spin -ml-1 mr-3 h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-4 text-lg font-medium">Connecting to system...</p>
+        </div>
+
+        <!-- Admin View (Hidden by default, shown by JS) -->
+        <div id="admin-view" class="hidden w-full space-y-8 fade-in">
+            <div>
+                <h1 class="text-3xl font-bold text-center text-blue-600 dark:text-blue-400">Project PDF QR Manager</h1>
+                <p class="text-center text-gray-600 dark:text-gray-400 mt-2">Add your projects and PDF links to generate their QR codes.</p>
+                <p class="text-center text-xs text-gray-500 dark:text-gray-500 mt-1">Your Admin User ID: <code id="userId" class="bg-gray-200 dark:bg-gray-700 p-1 rounded">...</code></p>
+            </div>
+
+            <!-- Add Project Form -->
+            <form id="project-form" class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg space-y-4">
+                <h2 class="text-2xl font-semibold">Add New Project PDF</h2>
+                <div>
+                    <label for="title" class="block text-sm font-medium">Project Title</label>
+                    <input type="text" id="title" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="pdfUrl" class="block text-sm font-medium">PDF URL</label>
+                    <input type="url" id="pdfUrl" required class="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="https://drive.google.com/...">
+                    <p class="mt-1 text-xs text-gray-500">Tip: For Google Drive, use the "Share" link.</p>
+                </div>
+                <button type="submit" id="submit-btn" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Add Project
+                </button>
+            </form>
+
+            <!-- Project List -->
+            <div class="space-y-6">
+                <h2 class="text-2xl font-semibold">Your Projects</h2>
+                <div id="project-list" class="space-y-4">
+                    <!-- Projects will be dynamically inserted here -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- Viewer View (Hidden by default, shown by JS) -->
+        <div id="viewer-view" class="hidden w-full h-full p-0 sm:p-0 bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden fade-in flex flex-col">
+            <!-- Header bar for viewer -->
+            <div class="flex-shrink-0 bg-gray-50 dark:bg-gray-700 p-4 flex justify-between items-center border-b dark:border-gray-600">
+                <h1 id="view-title" class="text-lg sm:text-xl font-bold text-gray-800 dark:text-gray-100 truncate"></h1>
+                <a href="/" title="Back to Project Manager" class="flex-shrink-0 py-2 px-3 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Admin
+                </a>
+            </div>
+            <!-- PDF Viewer Iframe -->
+            <iframe id="pdf-viewer" class="w-full h-full flex-grow border-0"></iframe>
+        </div>
+
+    </div>
+
+    <!-- Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            addDoc,
+            getDoc,
+            onSnapshot, 
+            deleteDoc,
+            setLogLevel 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Configs ---
+        
+        // ======================================================================
+        // START: PASTE YOUR FIREBASE CONFIG OBJECT HERE
+        // ======================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCC1OMCtVZWTePpAo_nh4L-ysJ6b6qsFrA",
+            authDomain: "my-project-viewer-raiot.firebaseapp.com",
+            projectId: "my-project-viewer-raiot",
+            storageBucket: "my-project-viewer-raiot.firebasestorage.app",
+            messagingSenderId: "487701894888",
+            appId: "1:487701894888:web:0e1653472afe52adc1db5d"
+          };
+        
+        // ======================================================================
+        // END: PASTE YOUR FIREBASE CONFIG OBJECT HERE
+        // ======================================================================
+
+        const appId = firebaseConfig.projectId || 'default-pdf-viewer'; // Use projectId as a unique app identifier
+        
+        // --- Firebase Init ---
+        let app, auth, db, projectsColRef, currentUserId;
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            setLogLevel('Debug');
+            
+            // --- Elements ---
+            const appContainer = document.getElementById('app-container');
+            const loadingEl = document.getElementById('loading');
+            const adminViewEl = document.getElementById('admin-view');
+            const viewerViewEl = document.getElementById('viewer-view');
+            
+            const projectForm = document.getElementById('project-form');
+            const titleInput = document.getElementById('title');
+            const pdfUrlInput = document.getElementById('pdfUrl');
+            const submitBtn = document.getElementById('submit-btn');
+            const projectListEl = document.getElementById('project-list');
+            const userIdEl = document.getElementById('userId');
+            
+            const viewTitleEl = document.getElementById('view-title');
+            const pdfViewerEl = document.getElementById('pdf-viewer');
+
+            // --- Auth ---
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    console.log("User is signed in:", user.uid);
+                    currentUserId = user.uid;
+                    userIdEl.textContent = currentUserId;
+                    
+                    // Use a PUBLIC collection so visitors can read
+                    projectsColRef = collection(db, `artifacts/${appId}/public/data/projects`);
+                    handleRouting();
+                }
+            });
+
+            // Sign in
+            signInAnonymously(auth).catch((error) => {
+                console.error("Anonymous sign-in error", error);
+                loadingEl.textContent = "Error: Could not connect to service.";
+            });
+
+            // --- Routing ---
+            function handleRouting() {
+                const params = new URLSearchParams(window.location.search);
+                const projectId = params.get('id');
+
+                if (projectId) {
+                    showViewerMode(projectId);
+                } else {
+                    showAdminMode();
+                }
+            }
+            
+            // --- Viewer Mode ---
+            async function showViewerMode(projectId) {
+                console.log("Entering Viewer Mode for project:", projectId);
+                // Make viewer take up more space
+                appContainer.classList.remove('max-w-4xl');
+                appContainer.classList.add('max-w-7xl'); // Wider for PDF viewer
+                
+                adminViewEl.classList.add('hidden');
+                loadingEl.classList.add('hidden');
+                viewerViewEl.classList.remove('hidden');
+
+                try {
+                    const projectDocRef = doc(db, `artifacts/${appId}/public/data/projects`, projectId);
+                    const docSnap = await getDoc(projectDocRef);
+
+                    if (docSnap.exists()) {
+                        const project = docSnap.data();
+                        document.title = project.title; // Set page title
+                        viewTitleEl.textContent = project.title;
+                        
+                        // Set the iframe source
+                        pdfViewerEl.src = convertToEmbedUrl(project.pdfUrl);
+
+                    } else {
+                        viewTitleEl.textContent = "Project Not Found";
+                        pdfViewerEl.classList.add('hidden');
+                    }
+                } catch (error) {
+                    console.error("Error fetching project:", error);
+                    viewTitleEl.textContent = "Error";
+                    pdfViewerEl.classList.add('hidden');
+                }
+            }
+
+            // --- Google Drive URL Converter ---
+            function convertToEmbedUrl(url) {
+                // Check for Google Drive links
+                if (url.includes("drive.google.com/file/d/")) {
+                    try {
+                        // Extract the file ID
+                        const fileId = url.split('/d/')[1].split('/')[0];
+                        // Return the /preview (embed) URL
+                        return `https://drive.google.com/file/d/${fileId}/preview`;
+                    } catch (e) {
+                        console.error("Could not parse Google Drive URL", e);
+                        return url; // Fallback to original URL
+                    }
+                }
+                // For other URLs (like a direct .pdf link), just return them
+                return url;
+            }
+
+            // --- Admin Mode ---
+            function showAdminMode() {
+                // Ensure admin view is constrained
+                appContainer.classList.add('max-w-4xl');
+                appContainer.classList.remove('max-w-7xl');
+
+                loadingEl.classList.add('hidden');
+                adminViewEl.classList.remove('hidden');
+                viewerViewEl.classList.add('hidden');
+
+                // Attach form listener
+                projectForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = "Adding...";
+
+                    try {
+                        await addDoc(projectsColRef, {
+                            title: titleInput.value,
+                            pdfUrl: pdfUrlInput.value,
+                            ownerId: currentUserId // Track who created it
+                        });
+                        projectForm.reset();
+                    } catch (error) {
+                        console.error("Error adding document: ", error);
+                    } finally {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = "Add Project";
+                    }
+                });
+
+                // Listen for project changes
+                onSnapshot(projectsColRef, (snapshot) => {
+                    projectListEl.innerHTML = ''; // Clear list
+                    let hasProjects = false;
+                    snapshot.docs.forEach((docSnap) => {
+                        // Only show projects created by the current user in the admin list
+                        if (docSnap.data().ownerId === currentUserId) {
+                            hasProjects = true;
+                            const project = docSnap.data();
+                            const projectId = docSnap.id;
+                            renderProjectCard(project, projectId);
+                        }
+                    });
+
+                    if (!hasProjects) {
+                        projectListEl.innerHTML = `<p class="text-gray-500 dark:text-gray-400 text-center">No projects added yet.</p>`;
+                    }
+                });
+            }
+            
+            // --- Render Project Card (for Admin) ---
+            function renderProjectCard(project, projectId) {
+                const card = document.createElement('div');
+                card.className = "bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-6";
+                
+                const qrContainer = document.createElement('div');
+                qrContainer.className = "flex-shrink-0 p-2 bg-white rounded-lg qr-container"; // White bg for QR
+                
+                const infoContainer = document.createElement('div');
+                infoContainer.className = "flex-grow overflow-hidden";
+                infoContainer.innerHTML = `
+                    <h3 class="text-xl font-semibold text-blue-600 dark:text-blue-400">${project.title}</h3>
+                    <p class="text-gray-600 dark:text-gray-400 mt-1 text-sm truncate" title="${project.pdfUrl}">
+                        ${project.pdfUrl}
+                    </p>
+                `;
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = "flex-shrink-0 py-2 px-4 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500";
+                deleteBtn.textContent = "Delete";
+                deleteBtn.onclick = () => {
+                    const modal = createConfirmModal(`Are you sure you want to delete "${project.title}"?`, async () => {
+                        try {
+                            await deleteDoc(doc(db, `artifacts/${appId}/public/data/projects`, projectId));
+                        } catch (error) {
+                            console.error("Error deleting project:", error);
+                        }
+                    });
+                    document.body.appendChild(modal);
+                };
+
+                card.appendChild(qrContainer);
+                card.appendChild(infoContainer);
+                card.appendChild(deleteBtn);
+                projectListEl.appendChild(card);
+
+                // Generate QR Code linking to THIS PAGE with the project ID
+                const viewUrl = `${window.location.href.split('?')[0]}?id=${projectId}`;
+                new QRCode(qrContainer, {
+                    text: viewUrl,
+                    width: 128,
+                    height: 128,
+                    colorDark : "#000000",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
+                });
+            }
+
+            // --- Custom Confirm Modal (avoids window.confirm) ---
+            function createConfirmModal(message, onConfirm) {
+                const modalOverlay = document.createElement('div');
+                modalOverlay.className = "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4";
+
+                const modalContent = document.createElement('div');
+                modalContent.className = "bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm";
+                
+                const messageEl = document.createElement('p');
+                messageEl.textContent = message;
+                messageEl.className = "text-lg text-gray-900 dark:text-gray-100 mb-6";
+                
+                const buttonContainer = document.createElement('div');
+                buttonContainer.className = "flex justify-end space-x-4";
+
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = "Cancel";
+                cancelBtn.className = "py-2 px-4 rounded-md text-sm font-medium bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-100 hover:bg-gray-300 dark:hover:bg-gray-500";
+                cancelBtn.onclick = () => document.body.removeChild(modalOverlay);
+
+                const confirmBtn = document.createElement('button');
+                confirmBtn.textContent = "Delete";
+                confirmBtn.className = "py-2 px-4 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700";
+                confirmBtn.onclick = () => {
+                    onConfirm();
+                    document.body.removeChild(modalOverlay);
+                };
+
+                buttonContainer.appendChild(cancelBtn);
+                buttonContainer.appendChild(confirmBtn);
+                modalContent.appendChild(messageEl);
+                modalContent.appendChild(buttonContainer);
+                modalOverlay.appendChild(modalContent);
+
+                return modalOverlay;
+            }
+
+        } catch (error) {
+            console.error("Firebase initialization error:", error);
+            const loadingEl = document.getElementById('loading');
+            loadingEl.textContent = "Error: Application failed to load. Please check configuration.";
+            if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+                loadingEl.innerHTML = "<strong>Error:</strong> You forgot to paste your Firebase config into the HTML file. Please follow the setup guide.";
+            }
+        }
+
+    </script>
+</body>
+</html>
